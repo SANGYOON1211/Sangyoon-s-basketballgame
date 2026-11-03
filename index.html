@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PC·모바일 농구 슛 게임</title>
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 20px;
+      background: #0b1320;
+      color: #e7eef7;
+      font-family: system-ui, "Malgun Gothic", sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    main { width: min(100%, 960px); }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    h1 { margin: 0; font-size: 20px; }
+
+    button {
+      padding: 9px 16px;
+      border: 1px solid #43617b;
+      border-radius: 8px;
+      background: #18283e;
+      color: white;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    button:hover { background: #24394f; }
+
+    button:focus-visible,
+    canvas:focus-visible {
+      outline: 3px solid #70efbd;
+      outline-offset: 4px;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      aspect-ratio: 3 / 2;
+      border: 1px solid #2d435c;
+      border-radius: 12px;
+      background: #101b2b;
+    }
+
+    .help {
+      font-size: 14px;
+      color: #a8bdd1;
+      line-height: 1.8;
+    }
+
+    kbd {
+      padding: 2px 6px;
+      border: 1px solid #354c65;
+      border-radius: 4px;
+      background: #18283e;
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    .mobile-readout {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 12px;
+      padding: 12px;
+      border: 1px solid #354c65;
+      border-radius: 10px;
+      background: #18283e;
+      font-size: 16px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .power-track {
+      height: 12px;
+      margin: 8px 0 12px;
+      background: #263b52;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    #power-fill {
+      height: 100%;
+      width: 0%;
+      background: #69dfb6;
+      transform-origin: left;
+    }
+
+    .touch-controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1.4fr;
+      gap: 10px;
+    }
+
+    .touch-controls button {
+      min-height: 60px;
+      padding: 12px 8px;
+      font-size: 16px;
+      font-weight: 700;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+
+    #shoot-button { background: #226349; border-color: #70efbd; }
+    .touch-controls button.is-held { background: #365473; }
+    #shoot-button.is-held { background: #35895f; }
+    .touch-controls button[aria-disabled="true"] { opacity: 0.55; cursor: default; }
+    #touch-hint { margin: 10px 0 0; color: #c5d8e9; font-size: 14px; line-height: 1.7; }
+    .help { overflow-wrap: anywhere; }
+    .game-message { min-height: 1.7em; font-size: 16px; line-height: 1.7; }
+
+    @media (max-width: 600px) {
+      body { padding: 10px; justify-content: flex-start; }
+      h1 { font-size: 17px; }
+      .header { flex-wrap: wrap; }
+      .mobile-readout { font-size: 15px; }
+      .touch-controls { grid-template-columns: 1fr 1fr; }
+      #shoot-button { grid-column: 1 / -1; min-height: 66px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="header">
+      <h1>🏀 농구 슛 게임</h1>
+      <button id="restart" type="button">다시 시작 (R)</button>
+    </div>
+
+    <canvas
+      id="game"
+      width="960"
+      height="640"
+      tabindex="0"
+      aria-label="PC 키보드와 모바일 터치로 조작하는 농구 슛 게임"
+      aria-describedby="instructions touch-hint"
+    >
+      Canvas를 지원하는 브라우저에서 실행해 주세요.
+    </canvas>
+
+    <div class="mobile-readout" aria-live="off">
+      <span id="score-readout">0점 · 0/0 성공 · 성공률 0%</span>
+      <span id="aim-readout">각도 55° · 파워 0%</span>
+    </div>
+    <div id="power-meter" class="power-track" role="progressbar"
+         aria-label="슛 파워" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+      <div id="power-fill"></div>
+    </div>
+    <div class="touch-controls" role="group" aria-label="농구 게임 터치 조작">
+      <button id="angle-up" type="button" aria-label="누르고 있는 동안 슛 각도 높이기">각도 +</button>
+      <button id="angle-down" type="button" aria-label="누르고 있는 동안 슛 각도 낮추기">각도 −</button>
+      <button id="shoot-button" type="button" aria-describedby="touch-hint">누르고 있다가 놓으면 슛!</button>
+    </div>
+    <p id="touch-hint">터치: 각도 + / − 버튼을 길게 눌러 조준한 뒤, 초록색 버튼을 눌러 힘을 모으고 놓으세요. 슛 중에는 다음 공을 기다려 주세요.</p>
+    <p id="instructions" class="help">
+      PC: 게임 화면을 클릭한 뒤 <kbd>←</kbd> / <kbd>↑</kbd>로 각도를 높이고,
+      <kbd>→</kbd> / <kbd>↓</kbd>로 낮추세요.<br>
+      <kbd>Space</kbd>를 누르고 있다가 놓으면 슛!
+      <kbd>R</kbd>: 초기화 · <kbd>Esc</kbd>: 슛 준비 취소<br>
+      모바일: 아래 터치 버튼으로 조작할 수 있습니다. 각도는 30~80°, 파워는 최대 100%입니다.
+    </p>
+
+    <p id="status" class="game-message" role="status" aria-live="polite"></p>
+  </main>
+
+  <script>
+    "use strict";
+
+    (() => {
+      const WIDTH = 960;
+      const HEIGHT = 640;
+      const FLOOR = 550;
+
+      const GRAVITY = 900;
+      const BALL_R = 14;
+      const STEP = 1 / 120;
+
+      const START_X = 210;
+      const START_Y = 476;
+
+      const HOOP_X = 760;
+      const HOOP_Y = 246;
+      const HALF_RIM = 35;
+
+      const BOARD_X = 808;
+      const BOARD_TOP = 148;
+      const BOARD_BOTTOM = 274;
+
+      // 그물 애니메이션 설정: 아래 값을 바꾸면 움직임을 조절할 수 있습니다.
+      const NET_DURATION = 1.6;   // 흔들리는 시간(초)
+      const NET_SWAY = 13;        // 좌우 흔들림 크기
+      const NET_STRETCH = 18;     // 아래로 늘어나는 크기
+      const NET_HEIGHT = 56;
+
+      const canvas = document.getElementById("game");
+      const ctx = canvas.getContext("2d");
+      const status = document.getElementById("status");
+      const angleUpButton = document.getElementById("angle-up");
+      const angleDownButton = document.getElementById("angle-down");
+      const shootButton = document.getElementById("shoot-button");
+      const scoreReadout = document.getElementById("score-readout");
+      const aimReadout = document.getElementById("aim-readout");
+      const powerMeter = document.getElementById("power-meter");
+      const powerFill = document.getElementById("power-fill");
+
+      if (!ctx) {
+        status.classList.remove("sr-only");
+        status.textContent = "Canvas를 지원하는 브라우저가 필요합니다.";
+        return;
+      }
+
+      class BasketballGame {
+        constructor() {
+          this.keys = new Set();
+          this.pointerControls = new Map();
+          this.restart();
+          this.lastTime = performance.now();
+          this.accumulator = 0;
+          this.bindEvents();
+          this.resize();
+          this.draw();
+          requestAnimationFrame(time => this.tick(time));
+        }
+
+        setMessage(text, color = "#dbe6f2") {
+          this.message = text;
+          this.messageColor = color;
+          status.textContent = text;
+          status.style.color = color;
+        }
+
+        resetBall() {
+          this.x = START_X;
+          this.y = START_Y;
+          this.vx = 0;
+          this.vy = 0;
+          this.active = false;
+          this.scored = false;
+          this.charging = false;
+          this.chargeSource = null;
+          this.power = 0;
+          this.age = 0;
+          this.finishIn = null;
+
+          // 그물 상태는 여기서 초기화하지 않습니다.
+          // 다음 공이 준비되어도 흔들림이 끊기지 않습니다.
+        }
+
+        restart() {
+          this.angle = 55;
+          this.shots = 0;
+          this.made = 0;
+          this.streak = 0;
+          this.cancelInput();
+
+          // 전체 게임을 다시 시작할 때만 그물도 멈춥니다.
+          this.netTime = NET_DURATION;
+          this.netDirection = 1;
+
+          this.resetBall();
+          this.setMessage("PC: 스페이스바 · 모바일: 초록색 버튼을 누르고 놓으면 슛!");
+        }
+
+        velocity(power) {
+          const speed = 380 + 720 * power;
+          const radians = this.angle * Math.PI / 180;
+
+          return {
+            vx: speed * Math.cos(radians),
+            vy: -speed * Math.sin(radians)
+          };
+        }
+
+        beginCharge(source) {
+          if (this.active || this.charging) return false;
+          this.charging = true;
+          this.chargeSource = source;
+          this.power = 0;
+          return true;
+        }
+
+        shoot(source) {
+          if (!this.charging || this.active || this.chargeSource !== source) return;
+          this.charging = false;
+          this.chargeSource = null;
+          const velocity = this.velocity(this.power);
+          this.vx = velocity.vx;
+          this.vy = velocity.vy;
+          this.active = true;
+          this.shots += 1;
+          this.setMessage("슛!");
+        }
+
+        cancelInput() {
+          this.keys.clear();
+          this.charging = false;
+          this.chargeSource = null;
+          if (!this.active) this.power = 0;
+          const pointers = [...this.pointerControls.entries()];
+          this.pointerControls.clear();
+          for (const [id, record] of pointers) {
+            record.button.classList.remove("is-held");
+            if (record.button.hasPointerCapture(id)) {
+              record.button.releasePointerCapture(id);
+            }
+          }
+        }
+
+        bindEvents() {
+          const controls = new Set([
+            "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown",
+            "Space", "KeyR", "Escape"
+          ]);
+
+          canvas.addEventListener("keydown", event => {
+            if (!controls.has(event.code)) return;
+            event.preventDefault();
+
+            if (event.repeat || this.keys.has(event.code)) return;
+            this.keys.add(event.code);
+
+            if (event.code === "KeyR") {
+              this.restart();
+            } else if (event.code === "Escape") {
+              this.cancelInput();
+            } else if (event.code === "Space") {
+              this.beginCharge("keyboard");
+            }
+          });
+
+          canvas.addEventListener("keyup", event => {
+            if (!controls.has(event.code)) return;
+            event.preventDefault();
+            this.keys.delete(event.code);
+            if (event.code === "Space") this.shoot("keyboard");
+          });
+
+          // Pointer Events로 터치·마우스·펜을 같은 방식으로 처리합니다.
+          // 캡처를 사용해 버튼 밖에서 손을 놓아도 정상적으로 슛합니다.
+          const bindHold = (button, action) => {
+            button.addEventListener("contextmenu", event => event.preventDefault());
+            button.addEventListener("pointerdown", event => {
+              if (event.button !== 0 || this.active) return;
+              event.preventDefault();
+              canvas.focus({ preventScroll: true });
+              if ([...this.pointerControls.values()].some(record => record.button === button)) return;
+              const source = `pointer:${event.pointerId}`;
+              if (action === "shoot" && !this.beginCharge(source)) return;
+              this.pointerControls.set(event.pointerId, { button, action, source });
+              button.setPointerCapture(event.pointerId);
+              button.classList.add("is-held");
+            });
+
+            const finish = event => {
+              const record = this.pointerControls.get(event.pointerId);
+              if (!record || record.button !== button) return;
+              if (event.cancelable) event.preventDefault();
+              this.pointerControls.delete(event.pointerId);
+              button.classList.remove("is-held");
+              if (record.action === "shoot") {
+                if (event.type === "pointerup") {
+                  this.shoot(record.source);
+                } else if (this.chargeSource === record.source) {
+                  // OS 제스처, 화면 전환, 캡처 해제는 슛이 아니라 취소입니다.
+                  this.charging = false;
+                  this.chargeSource = null;
+                  this.power = 0;
+                }
+              }
+              if (button.hasPointerCapture(event.pointerId)) {
+                button.releasePointerCapture(event.pointerId);
+              }
+            };
+            button.addEventListener("pointerup", finish);
+            button.addEventListener("pointercancel", finish);
+            button.addEventListener("lostpointercapture", finish);
+
+            // Tab으로 버튼을 선택한 사람은 Enter/Space로도 조작할 수 있습니다.
+            button.addEventListener("keydown", event => {
+              if (event.code !== "Space" && event.code !== "Enter") return;
+              event.preventDefault();
+              if (event.repeat) return;
+              const source = `button:${button.id}:${event.code}`;
+              if (action === "shoot") this.beginCharge(source);
+              else this.keys.add(action === "higher" ? "ButtonHigher" : "ButtonLower");
+            });
+            button.addEventListener("keyup", event => {
+              if (event.code !== "Space" && event.code !== "Enter") return;
+              event.preventDefault();
+              if (action === "shoot") this.shoot(`button:${button.id}:${event.code}`);
+              else this.keys.delete(action === "higher" ? "ButtonHigher" : "ButtonLower");
+            });
+            button.addEventListener("blur", () => this.cancelInput());
+          };
+          bindHold(angleUpButton, "higher");
+          bindHold(angleDownButton, "lower");
+          bindHold(shootButton, "shoot");
+
+          canvas.addEventListener("pointerdown", () => canvas.focus());
+          canvas.addEventListener("blur", () => this.cancelInput());
+          window.addEventListener("blur", () => this.cancelInput());
+
+          document.addEventListener("visibilitychange", () => {
+            this.cancelInput();
+            this.accumulator = 0;
+            this.lastTime = performance.now();
+          });
+
+          window.addEventListener("resize", () => {
+            this.resize();
+            this.draw();
+          });
+
+          document.getElementById("restart").addEventListener("click", () => {
+            this.restart();
+            canvas.focus();
+          });
+        }
+
+        resize() {
+          const dpr = Math.min(window.devicePixelRatio || 1, 2);
+          canvas.width = Math.round(WIDTH * dpr);
+          canvas.height = Math.round(HEIGHT * dpr);
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+
+        reflect(nx, ny, restitution) {
+          const toward = this.vx * nx + this.vy * ny;
+          if (toward < 0) {
+            this.vx -= (1 + restitution) * toward * nx;
+            this.vy -= (1 + restitution) * toward * ny;
+          }
+        }
+
+        collideRim(rimX) {
+          const dx = this.x - rimX;
+          const dy = this.y - HOOP_Y;
+          const distance = Math.hypot(dx, dy);
+          const limit = BALL_R + 4;
+
+          if (distance >= limit) return;
+
+          const nx = distance > 0.00001 ? dx / distance : 0;
+          const ny = distance > 0.00001 ? dy / distance : -1;
+
+          this.x = rimX + nx * limit;
+          this.y = HOOP_Y + ny * limit;
+          this.reflect(nx, ny, 0.62);
+        }
+
+        collideBoard() {
+          const nearestX = Math.min(Math.max(this.x, BOARD_X), BOARD_X + 10);
+          const nearestY = Math.min(
+            Math.max(this.y, BOARD_TOP), BOARD_BOTTOM
+          );
+
+          const dx = this.x - nearestX;
+          const dy = this.y - nearestY;
+          const distance = Math.hypot(dx, dy);
+
+          if (distance >= BALL_R) return;
+
+          const nx = distance > 0.00001
+            ? dx / distance
+            : (this.vx >= 0 ? -1 : 1);
+          const ny = distance > 0.00001 ? dy / distance : 0;
+          const overlap = BALL_R - distance + 0.1;
+
+          this.x += nx * overlap;
+          this.y += ny * overlap;
+          this.reflect(nx, ny, 0.7);
+        }
+
+        // 득점 순간 호출하여 그물 흔들림을 시작합니다.
+        shakeNet(horizontalVelocity) {
+          this.netTime = 0;
+          this.netDirection = horizontalVelocity < 0 ? -1 : 1;
+        }
+
+        // u: 좌우 위치(-1~1), v: 위아래 위치(0~1)
+        // v=0인 그물 위쪽은 림에 고정됩니다.
+        netPoint(u, v) {
+          const t = this.netTime;
+          const envelope = t < NET_DURATION
+            ? Math.exp(-2.5 * t) * (1 - t / NET_DURATION)
+            : 0;
+
+          const depth = v * v;
+
+          const sway = Math.sin(t * 15)
+            * NET_SWAY
+            * envelope
+            * depth
+            * this.netDirection;
+
+          const stretch = Math.sin(t * 10)
+            * NET_STRETCH
+            * envelope
+            * v;
+
+          // 아래쪽 그물 입구도 살짝 오므라들었다 펴집니다.
+          const opening = 1
+            - Math.sin(t * 11) * 0.12 * envelope * v;
+
+          const halfWidth = HALF_RIM * (1 - 0.42 * v) * opening;
+
+          return {
+            x: HOOP_X + u * halfWidth + sway,
+            y: HOOP_Y + 3 + NET_HEIGHT * v + stretch
+          };
+        }
+
+        // 매 프레임 변형된 좌표로 그물을 다시 그립니다.
+        drawNet() {
+          const columns = 8;
+          const rows = 6;
+
+          ctx.save();
+          ctx.lineJoin = "round";
+          ctx.lineCap = "round";
+
+          // 세로 줄
+          for (let column = 0; column <= columns; column++) {
+            const u = -1 + 2 * column / columns;
+            const points = [];
+
+            for (let row = 0; row <= rows; row++) {
+              const point = this.netPoint(u, row / rows);
+              points.push(point.x, point.y);
+            }
+
+            this.line(points, "#d3e0eb", 1.6);
+          }
+
+          // 가로 줄도 곡선처럼 휘도록 여러 점으로 연결합니다.
+          for (let row = 1; row <= rows; row++) {
+            const points = [];
+
+            for (let column = 0; column <= columns; column++) {
+              const u = -1 + 2 * column / columns;
+              const point = this.netPoint(u, row / rows);
+              points.push(point.x, point.y);
+            }
+
+            this.line(points, "#a7bed1", 1.2);
+          }
+
+          ctx.restore();
+        }
+
+        endShot() {
+          if (!this.scored) {
+            this.streak = 0;
+            this.setMessage(
+              "아쉽네요! 각도와 힘을 조절해 보세요.",
+              "#ffce90"
+            );
+          }
+
+          this.resetBall();
+        }
+
+        update(dt) {
+          // 공의 상태와 무관하게 계속 갱신해야
+          // 다음 슛을 준비하는 동안에도 그물이 움직입니다.
+          this.netTime = Math.min(NET_DURATION, this.netTime + dt);
+
+          if (!this.active) {
+            const touchActions = new Set(
+              [...this.pointerControls.values()].map(record => record.action)
+            );
+            const higher = this.keys.has("ArrowLeft")
+              || this.keys.has("ArrowUp") || this.keys.has("ButtonHigher")
+              || touchActions.has("higher");
+            const lower = this.keys.has("ArrowRight")
+              || this.keys.has("ArrowDown") || this.keys.has("ButtonLower")
+              || touchActions.has("lower");
+            const direction = Number(higher) - Number(lower);
+
+            this.angle = Math.max(
+              30, Math.min(80, this.angle + direction * 38 * dt)
+            );
+
+            if (this.charging) {
+              this.power = Math.min(1, this.power + dt / 1.2);
+            }
+
+            return;
+          }
+
+          this.age += dt;
+
+          if (this.finishIn !== null) {
+            this.finishIn -= dt;
+            if (this.finishIn <= 0) {
+              this.endShot();
+              return;
+            }
+          }
+
+          const oldX = this.x;
+          const oldY = this.y;
+
+          this.vy += GRAVITY * dt;
+          this.x += this.vx * dt;
+          this.y += this.vy * dt;
+
+          if (
+            !this.scored &&
+            this.vy > 0 &&
+            oldY < HOOP_Y &&
+            this.y >= HOOP_Y
+          ) {
+            const fraction = (HOOP_Y - oldY) / (this.y - oldY);
+            const crossingX = oldX + (this.x - oldX) * fraction;
+            const clearance = HALF_RIM - BALL_R - 3;
+
+            if (Math.abs(crossingX - HOOP_X) <= clearance) {
+              this.scored = true;
+              this.made += 1;
+              this.streak += 1;
+              this.finishIn = 0.9;
+
+              // 득점한 순간에만 그물을 흔듭니다.
+              this.shakeNet(this.vx);
+
+              this.setMessage(
+                `골! +2점  |  ${this.streak}연속 성공`,
+                "#70efbd"
+              );
+            }
+          }
+
+          this.collideBoard();
+          this.collideRim(HOOP_X - HALF_RIM);
+          this.collideRim(HOOP_X + HALF_RIM);
+
+          if (this.y + BALL_R >= FLOOR) {
+            this.y = FLOOR - BALL_R;
+
+            if (this.vy > 0) {
+              this.vy *= -0.38;
+              this.vx *= 0.72;
+            }
+
+            if (this.finishIn === null) this.finishIn = 0.7;
+          }
+
+          if (this.x < -80 || this.x > WIDTH + 80 || this.age > 5) {
+            this.endShot();
+          }
+        }
+
+        rect(x, y, width, height, fill, stroke = null, lineWidth = 1) {
+          if (fill) {
+            ctx.fillStyle = fill;
+            ctx.fillRect(x, y, width, height);
+          }
+
+          if (stroke) {
+            ctx.strokeStyle = stroke;
+            ctx.lineWidth = lineWidth;
+            ctx.strokeRect(x, y, width, height);
+          }
+        }
+
+        line(points, color, width = 1) {
+          ctx.beginPath();
+          ctx.moveTo(points[0], points[1]);
+
+          for (let i = 2; i < points.length; i += 2) {
+            ctx.lineTo(points[i], points[i + 1]);
+          }
+
+          ctx.strokeStyle = color;
+          ctx.lineWidth = width;
+          ctx.stroke();
+        }
+
+        ellipse(x, y, rx, ry, fill = null, stroke = null, width = 1) {
+          ctx.beginPath();
+          ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+
+          if (fill) {
+            ctx.fillStyle = fill;
+            ctx.fill();
+          }
+
+          if (stroke) {
+            ctx.strokeStyle = stroke;
+            ctx.lineWidth = width;
+            ctx.stroke();
+          }
+        }
+
+        text(x, y, content, size = 14, color = "#e7eef7", align = "center") {
+          ctx.font = `${size}px system-ui, "Malgun Gothic", sans-serif`;
+          ctx.fillStyle = color;
+          ctx.textAlign = align;
+          ctx.textBaseline = "middle";
+          ctx.fillText(content, x, y);
+        }
+
+        drawBackground() {
+          this.rect(0, 0, WIDTH, HEIGHT, "#101b2b");
+          this.rect(0, 100, WIDTH, FLOOR - 100, "#18283e");
+
+          for (const y of [150, 195, 240]) {
+            this.line([30, y, 930, y], "#24394f", 2);
+          }
+
+          this.rect(0, FLOOR, WIDTH, HEIGHT - FLOOR, "#b8773f");
+
+          for (let x = 0; x < WIDTH; x += 80) {
+            this.line([x, FLOOR, x - 32, HEIGHT], "#966032");
+          }
+
+          this.line([0, FLOOR, WIDTH, FLOOR], "#efd0a0", 3);
+          this.ellipse(662, 648, 227, 82, null, "#f4d3a1", 3);
+
+          this.line([833, 196, 867, 196, 867, FLOOR], "#536479", 12);
+          this.rect(
+            BOARD_X, BOARD_TOP, 10, BOARD_BOTTOM - BOARD_TOP,
+            "#c4dced", "#ffffff", 2
+          );
+
+          this.ellipse(165, 455, 14, 14, "#f5bc82");
+          this.line([165, 477, 165, 505], "#60c9eb", 22);
+          this.line([165, 482, 188, 489, 204, 481], "#f5bc82", 9);
+          this.line([161, 506, 150, 540], "#cbd9ec", 9);
+          this.line([171, 506, 187, 540], "#cbd9ec", 9);
+
+          this.text(30, 35, "BASKETBALL", 24, "#ffffff", "left");
+          this.text(
+            30, 70, "KEYBOARD & TOUCH SHOOTING GAME", 10, "#86a2bd", "left"
+          );
+          this.text(
+            480, 613,
+            "PC: 방향키 / SPACE  |  모바일: 아래 터치 버튼  |  R: 초기화  |  ESC: 취소",
+            12, "#fff2dc"
+          );
+        }
+
+        drawBall() {
+          const shadow = Math.max(
+            5, 16 - Math.abs(FLOOR - this.y) * 0.016
+          );
+
+          this.ellipse(this.x, FLOOR - 1, shadow, 4, "#745030");
+          this.ellipse(
+            this.x, this.y, BALL_R, BALL_R,
+            "#f58a2d", "#422a1c", 2
+          );
+          this.line(
+            [this.x - BALL_R + 2, this.y, this.x + BALL_R - 2, this.y],
+            "#593322", 2
+          );
+
+          ctx.beginPath();
+          ctx.ellipse(
+            this.x, this.y, 6, BALL_R - 1,
+            0, Math.PI / 2, Math.PI * 1.5
+          );
+          ctx.strokeStyle = "#593322";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+
+        draw() {
+          this.drawBackground();
+
+          const accuracy = this.shots
+            ? Math.round(100 * this.made / this.shots)
+            : 0;
+
+          // 작은 모바일 화면에서도 읽기 쉬운 HTML 상태 표시입니다.
+          const scoreKo = `${this.made * 2}점 · ${this.made}/${this.shots} 성공 · 성공률 ${accuracy}%`;
+          const aimKo = `각도 ${Math.round(this.angle)}° · 파워 ${Math.round(this.power * 100)}%`;
+          if (scoreReadout.textContent !== scoreKo) scoreReadout.textContent = scoreKo;
+          if (aimReadout.textContent !== aimKo) aimReadout.textContent = aimKo;
+          powerFill.style.width = `${this.power * 100}%`;
+          powerMeter.setAttribute("aria-valuenow", String(Math.round(this.power * 100)));
+          // 실제 disabled는 포커스/포인터 해제를 방해할 수 있어 상태만 표시합니다.
+          // 충전·터치 시작 함수와 물리 갱신 함수가 비행 중 조작을 막습니다.
+          for (const button of [angleUpButton, angleDownButton, shootButton]) {
+            button.setAttribute("aria-disabled", String(this.active));
+          }
+
+          this.text(
+            935, 35,
+            `${this.made * 2}점    ${this.made}/${this.shots} 성공    성공률 ${accuracy}%`,
+            17, "#ffffff", "right"
+          );
+          this.text(
+            935, 72,
+            `각도 ${Math.round(this.angle)}°    파워 ${Math.round(this.power * 100)}%`,
+            12, "#93c8eb", "right"
+          );
+          this.text(480, 125, this.message, 16, this.messageColor);
+
+          this.text(30, 377, "POWER", 10, "#bcd3e8", "left");
+          this.rect(30, 399, 215, 20, "#0e1928", "#43617b");
+
+          if (this.power > 0) {
+            this.rect(
+              32, 401, 211 * this.power, 16,
+              this.power < 0.85 ? "#69dfb6" : "#ffbc66"
+            );
+          }
+
+          if (!this.active) {
+            const previewPower = this.charging ? this.power : 0.55;
+            const velocity = this.velocity(previewPower);
+
+            for (let i = 1; i <= 12; i++) {
+              const t = i * 0.055;
+              const x = START_X + velocity.vx * t;
+              const y = START_Y + velocity.vy * t
+                + 0.5 * GRAVITY * t * t;
+
+              if (y > FLOOR - BALL_R) break;
+              this.ellipse(x, y, 2, 2, "#729cba");
+            }
+          }
+
+          // 골대 뒤쪽 림
+          ctx.beginPath();
+          ctx.ellipse(
+            HOOP_X, HOOP_Y, HALF_RIM, 5,
+            0, Math.PI, Math.PI * 2
+          );
+          ctx.strokeStyle = "#ff8141";
+          ctx.lineWidth = 5;
+          ctx.stroke();
+
+          this.drawBall();
+
+          // 공 위에 그물을 겹쳐 그려 그물 안으로 통과하는 느낌을 줍니다.
+          this.drawNet();
+
+          // 앞쪽 림은 마지막에 그립니다. 림 자체는 흔들리지 않습니다.
+          ctx.beginPath();
+          ctx.ellipse(
+            HOOP_X, HOOP_Y, HALF_RIM, 5,
+            0, 0, Math.PI
+          );
+          ctx.strokeStyle = "#ff8141";
+          ctx.lineWidth = 5;
+          ctx.stroke();
+        }
+
+        tick(now) {
+          const elapsed = Math.max(
+            0, Math.min((now - this.lastTime) / 1000, 0.05)
+          );
+
+          this.lastTime = now;
+
+          // 다른 탭에 있는 동안에는 게임 시간을 진행하지 않습니다.
+          if (!document.hidden) {
+            this.accumulator += elapsed;
+
+            while (this.accumulator >= STEP) {
+              this.update(STEP);
+              this.accumulator -= STEP;
+            }
+
+            this.draw();
+          }
+
+          requestAnimationFrame(time => this.tick(time));
+        }
+      }
+
+      new BasketballGame();
+      canvas.focus({ preventScroll: true });
+    })();
+  </script>
+</body>
+</html>
